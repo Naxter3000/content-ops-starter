@@ -299,6 +299,39 @@ export default function CurlingGame() {
             drawStone(ctx, s.activeStone, s.stonesThrown % 2 === 0);
         } else if (s.phase === 'power') {
             drawStone(ctx, s.activeStone, s.stonesThrown % 2 === 0);
+
+            // Power bar drawn directly on canvas
+            const barW = 200;
+            const barH = 18;
+            const barX = CANVAS_WIDTH / 2 - barW / 2;
+            const barY = DELIVERY_Y - 60;
+
+            // Background panel
+            ctx.fillStyle = 'rgba(0,0,20,0.72)';
+            ctx.fillRect(barX - 12, barY - 26, barW + 24, barH + 44);
+
+            // Label
+            ctx.fillStyle = '#fff';
+            ctx.font = 'bold 12px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('POWER — release to throw!', CANVAS_WIDTH / 2, barY - 8);
+
+            // Track
+            ctx.fillStyle = '#2d3748';
+            ctx.fillRect(barX, barY, barW, barH);
+
+            // Fill
+            const fillW = (s.power / 100) * barW;
+            const hue = 120 - s.power * 1.2;
+            ctx.fillStyle = `hsl(${hue}, 80%, 45%)`;
+            ctx.fillRect(barX, barY, fillW, barH);
+
+            // Border
+            ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(barX, barY, barW, barH);
+
+            ctx.textAlign = 'left'; // reset
         } else if ((s.phase === 'sliding' || s.phase === 'cpu') && !s.activeStoneSettled) {
             drawStone(ctx, s.activeStone, s.phase === 'sliding');
         }
@@ -455,6 +488,7 @@ export default function CurlingGame() {
             if (st.power >= 100) { st.power = 100; st.powerDir = -1; }
             if (st.power <= 0) { st.power = 0; st.powerDir = 1; }
             syncDisplay();
+            render();
             st.animFrame = requestAnimationFrame(animatePower);
         }
         stateRef.current.animFrame = requestAnimationFrame(animatePower);
