@@ -190,8 +190,7 @@ function applyCurl(vel, curl) {
 const TOTAL_ENDS = 3;
 const STONES_PER_SIDE = 4;
 
-function makeInitialState() {
-    const playerGoesFirst = Math.random() < 0.5;
+function makeInitialState(playerGoesFirst = true) {
     return {
         phase: 'start', // start | aim | power | sliding | cpu | endOver | gameOver
         playerStones: [],
@@ -582,11 +581,20 @@ export default function CurlingGame() {
 
     const handleRestart = useCallback(() => {
         cancelAnimationFrame(stateRef.current.animFrame);
-        const fresh = makeInitialState();
+        const fresh = makeInitialState(Math.random() < 0.5);
         Object.assign(stateRef.current, fresh);
         syncDisplay();
         render();
     }, [render, syncDisplay]);
+
+    // Randomize who goes first after mount to avoid SSR/client hydration mismatch
+    useEffect(() => {
+        const s = stateRef.current;
+        const playerGoesFirst = Math.random() < 0.5;
+        s.playerGoesFirst = playerGoesFirst;
+        s.nextThrowMsg = playerGoesFirst ? 'You throw first!' : 'CPU throws first!';
+        syncDisplay();
+    }, [syncDisplay]);
 
     useEffect(() => {
         render();
