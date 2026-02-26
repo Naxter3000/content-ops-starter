@@ -31,22 +31,18 @@ const COLORS = {
 };
 
 function drawIce(ctx) {
-    // Ice surface
     ctx.fillStyle = COLORS.ice;
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
-    // Subtle sheen stripes
     ctx.fillStyle = COLORS.iceSheen;
     for (let y = 0; y < CANVAS_HEIGHT; y += 40) {
         ctx.fillRect(0, y, CANVAS_WIDTH, 18);
     }
 
-    // Side boundaries
     ctx.strokeStyle = COLORS.line;
     ctx.lineWidth = 3;
     ctx.strokeRect(20, 20, CANVAS_WIDTH - 40, CANVAS_HEIGHT - 40);
 
-    // Center line
     ctx.strokeStyle = COLORS.line;
     ctx.lineWidth = 1;
     ctx.setLineDash([8, 6]);
@@ -56,7 +52,6 @@ function drawIce(ctx) {
     ctx.stroke();
     ctx.setLineDash([]);
 
-    // Hog line
     ctx.strokeStyle = COLORS.hog;
     ctx.lineWidth = 3;
     ctx.beginPath();
@@ -84,7 +79,6 @@ function drawHouse(ctx) {
         ctx.lineWidth = 1;
         ctx.stroke();
     }
-    // T-line
     ctx.strokeStyle = 'rgba(255,255,255,0.7)';
     ctx.lineWidth = 2;
     ctx.beginPath();
@@ -98,13 +92,11 @@ function drawHouse(ctx) {
 }
 
 function drawStone(ctx, stone, isPlayer) {
-    // Shadow
     ctx.beginPath();
     ctx.arc(stone.x + 3, stone.y + 3, STONE_RADIUS, 0, Math.PI * 2);
     ctx.fillStyle = 'rgba(0,0,0,0.15)';
     ctx.fill();
 
-    // Stone body
     ctx.beginPath();
     ctx.arc(stone.x, stone.y, STONE_RADIUS, 0, Math.PI * 2);
     const grad = ctx.createRadialGradient(
@@ -119,7 +111,6 @@ function drawStone(ctx, stone, isPlayer) {
     ctx.lineWidth = 2;
     ctx.stroke();
 
-    // Handle
     ctx.beginPath();
     ctx.arc(stone.x, stone.y, STONE_RADIUS * 0.45, 0, Math.PI * 2);
     ctx.fillStyle = isPlayer ? '#742a2a' : '#7b341e';
@@ -140,7 +131,6 @@ function drawAimLine(ctx, fromX, fromY, toX, toY) {
     ctx.stroke();
     ctx.setLineDash([]);
 
-    // Arrowhead
     const angle = Math.atan2(toY - fromY, toX - fromX);
     ctx.fillStyle = 'rgba(255,255,255,0.8)';
     ctx.beginPath();
@@ -177,6 +167,61 @@ function scoreStones(playerStones, cpuStones) {
     return scored;
 }
 
+// Elastic collision: mover hits a stationary placed stone.
+// Modifies mover position, vel velocity, and returns the knocked stone's new state.
+// Returns null if no collision or moving away.
+function resolveCollision(mover, vel, placed) {
+    const dx = placed.x - mover.x;
+    const dy = placed.y - mover.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist >= STONE_RADIUS * 2 || dist === 0) return null;
+
+    const nx = dx / dist;
+    const ny = dy / dist;
+    const dot = vel.vx * nx + vel.vy * ny;
+    if (dot <= 0) return null; // moving apart, skip
+
+    // Transfer velocity along collision normal (equal mass elastic)
+    vel.vx -= dot * nx;
+    vel.vy -= dot * ny;
+
+    // Separate the stones
+    const overlap = STONE_RADIUS * 2 - dist;
+    mover.x -= overlap * nx * 0.5;
+    mover.y -= overlap * ny * 0.5;
+
+    return {
+        x: placed.x + overlap * nx * 0.5,
+        y: placed.y + overlap * ny * 0.5,
+        vx: dot * nx,
+        vy: dot * ny,
+    };
+}
+
+// Check mover against all placed stones. Hit stones are removed from their
+// arrays and appended to movingStones.
+function checkCollisionsWithPlaced(playerStones, cpuStones, movingStones, mover, vel) {
+    for (let i = playerStones.length - 1; i >= 0; i--) {
+        const result = resolveCollision(mover, vel, playerStones[i]);
+        if (result) {
+            movingStones.push({ ...result, isPlayer: true });
+            playerStones.splice(i, 1);
+        }
+    }
+    for (let i = cpuStones.length - 1; i >= 0; i--) {
+        const result = resolveCollision(mover, vel, cpuStones[i]);
+        if (result) {
+            movingStones.push({ ...result, isPlayer: false });
+            cpuStones.splice(i, 1);
+        }
+    }
+}
+
+function isOutOfBounds(stone) {
+    return stone.x < 20 || stone.x > CANVAS_WIDTH - 20 ||
+        stone.y < 20 || stone.y > CANVAS_HEIGHT - 20;
+}
+
 const TOTAL_ENDS = 3;
 const STONES_PER_SIDE = 4;
 
@@ -186,14 +231,16 @@ export default function CurlingGame() {
         phase: 'aim', // aim | power | sliding | cpu | endOver | gameOver
         playerStones: [],
         cpuStones: [],
+        movingStones: [],        // knocked stones still sliding
         activeStone: { x: CANVAS_WIDTH / 2, y: DELIVERY_Y },
+        activeStoneSettled: false,
         velocity: { vx: 0, vy: 0 },
         aimAngle: -Math.PI / 2,
         power: 0,
         powerDir: 1,
         mouseX: CANVAS_WIDTH / 2,
         mouseY: DELIVERY_Y - 100,
-        stonesThrown: 0, // 0..STONES_PER_SIDE*2-1 per end
+        stonesThrown: 0,
         currentEnd: 1,
         playerScore: 0,
         cpuScore: 0,
@@ -234,12 +281,14 @@ export default function CurlingGame() {
         drawIce(ctx);
         drawHouse(ctx);
 
-        // Draw placed stones
+        // Draw settled stones
         s.playerStones.forEach(st => drawStone(ctx, st, true));
         s.cpuStones.forEach(st => drawStone(ctx, st, false));
 
+        // Draw knocked stones that are still sliding
+        s.movingStones.forEach(ms => drawStone(ctx, ms, ms.isPlayer));
+
         if (s.phase === 'aim') {
-            // Draw aim line
             const aimLen = 120;
             drawAimLine(
                 ctx,
@@ -250,11 +299,10 @@ export default function CurlingGame() {
             drawStone(ctx, s.activeStone, s.stonesThrown % 2 === 0);
         } else if (s.phase === 'power') {
             drawStone(ctx, s.activeStone, s.stonesThrown % 2 === 0);
-        } else if (s.phase === 'sliding' || s.phase === 'cpu') {
+        } else if ((s.phase === 'sliding' || s.phase === 'cpu') && !s.activeStoneSettled) {
             drawStone(ctx, s.activeStone, s.phase === 'sliding');
         }
 
-        // End/game overlay
         if (s.phase === 'endOver' || s.phase === 'gameOver') {
             ctx.fillStyle = 'rgba(0,0,30,0.55)';
             ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
@@ -268,6 +316,8 @@ export default function CurlingGame() {
         s.aimAngle = -Math.PI / 2;
         s.power = 0;
         s.powerDir = 1;
+        s.movingStones = [];
+        s.activeStoneSettled = false;
         s.phase = 'aim';
         syncDisplay();
         render();
@@ -296,8 +346,9 @@ export default function CurlingGame() {
     const doCpuThrow = useCallback(() => {
         const s = stateRef.current;
         s.phase = 'cpu';
+        s.movingStones = [];
+        s.activeStoneSettled = false;
 
-        // CPU aims for house center with some randomness
         const jitter = (Math.random() - 0.5) * 60;
         const targetX = HOUSE_X + jitter;
         const targetY = HOUSE_Y + (Math.random() - 0.5) * 40;
@@ -313,20 +364,50 @@ export default function CurlingGame() {
 
         function slide() {
             const st = stateRef.current;
-            st.activeStone.x += st.velocity.vx;
-            st.activeStone.y += st.velocity.vy;
-            st.velocity.vx *= FRICTION;
-            st.velocity.vy *= FRICTION;
 
-            const speed = Math.sqrt(st.velocity.vx ** 2 + st.velocity.vy ** 2);
-            const outOfBounds =
-                st.activeStone.x < 20 || st.activeStone.x > CANVAS_WIDTH - 20 ||
-                st.activeStone.y < 20;
+            // Move active stone
+            if (!st.activeStoneSettled) {
+                st.activeStone.x += st.velocity.vx;
+                st.activeStone.y += st.velocity.vy;
+                st.velocity.vx *= FRICTION;
+                st.velocity.vy *= FRICTION;
 
-            if (speed < 0.3 || outOfBounds) {
-                if (!outOfBounds) {
-                    st.cpuStones.push({ ...st.activeStone });
+                checkCollisionsWithPlaced(st.playerStones, st.cpuStones, st.movingStones, st.activeStone, st.velocity);
+
+                const spd = Math.sqrt(st.velocity.vx ** 2 + st.velocity.vy ** 2);
+                if (spd < 0.3 || isOutOfBounds(st.activeStone)) {
+                    if (!isOutOfBounds(st.activeStone)) {
+                        st.cpuStones.push({ x: st.activeStone.x, y: st.activeStone.y });
+                    }
+                    st.activeStoneSettled = true;
                 }
+            }
+
+            // Move knocked stones
+            const msCount = st.movingStones.length;
+            for (let j = 0; j < msCount; j++) {
+                const ms = st.movingStones[j];
+                ms.x += ms.vx;
+                ms.y += ms.vy;
+                ms.vx *= FRICTION;
+                ms.vy *= FRICTION;
+                checkCollisionsWithPlaced(st.playerStones, st.cpuStones, st.movingStones, ms, ms);
+            }
+
+            // Settle stopped moving stones
+            for (let i = st.movingStones.length - 1; i >= 0; i--) {
+                const ms = st.movingStones[i];
+                const msSpd = Math.sqrt(ms.vx ** 2 + ms.vy ** 2);
+                if (msSpd < 0.3 || isOutOfBounds(ms)) {
+                    if (!isOutOfBounds(ms)) {
+                        if (ms.isPlayer) st.playerStones.push({ x: ms.x, y: ms.y });
+                        else st.cpuStones.push({ x: ms.x, y: ms.y });
+                    }
+                    st.movingStones.splice(i, 1);
+                }
+            }
+
+            if (st.activeStoneSettled && st.movingStones.length === 0) {
                 st.stonesThrown++;
                 if (st.stonesThrown >= STONES_PER_SIDE * 2) {
                     finishEnd();
@@ -335,6 +416,7 @@ export default function CurlingGame() {
                 }
                 return;
             }
+
             render();
             st.animFrame = requestAnimationFrame(slide);
         }
@@ -355,69 +437,111 @@ export default function CurlingGame() {
         render();
     }, [render]);
 
-    const handleClick = useCallback(() => {
+    // Hold to charge: mousedown starts power bar animation
+    const handleMouseDown = useCallback(() => {
         const s = stateRef.current;
         if (s.stonesThrown % 2 !== 0) return; // CPU's turn
+        if (s.phase !== 'aim') return;
 
-        if (s.phase === 'aim') {
-            s.phase = 'power';
-            s.power = 0;
-            s.powerDir = 1;
+        s.phase = 'power';
+        s.power = 0;
+        s.powerDir = 1;
+        syncDisplay();
+
+        function animatePower() {
+            const st = stateRef.current;
+            if (st.phase !== 'power') return;
+            st.power += st.powerDir * 0.7;
+            if (st.power >= 100) { st.power = 100; st.powerDir = -1; }
+            if (st.power <= 0) { st.power = 0; st.powerDir = 1; }
             syncDisplay();
+            st.animFrame = requestAnimationFrame(animatePower);
+        }
+        stateRef.current.animFrame = requestAnimationFrame(animatePower);
+    }, [syncDisplay]);
 
-            function animatePower() {
-                const st = stateRef.current;
-                if (st.phase !== 'power') return;
-                st.power += st.powerDir * 0.7;
-                if (st.power >= 100) { st.power = 100; st.powerDir = -1; }
-                if (st.power <= 0) { st.power = 0; st.powerDir = 1; }
-                syncDisplay();
-                st.animFrame = requestAnimationFrame(animatePower);
-            }
-            stateRef.current.animFrame = requestAnimationFrame(animatePower);
+    // Release to throw: mouseup releases the stone
+    const handleMouseUp = useCallback(() => {
+        const s = stateRef.current;
+        if (s.phase !== 'power') return;
 
-        } else if (s.phase === 'power') {
-            // Release
-            cancelAnimationFrame(s.animFrame);
-            const speed = (s.power / 100) * MAX_POWER;
-            s.velocity = {
-                vx: Math.cos(s.aimAngle) * speed,
-                vy: Math.sin(s.aimAngle) * speed,
-            };
-            s.phase = 'sliding';
-            syncDisplay();
+        cancelAnimationFrame(s.animFrame);
+        const speed = (s.power / 100) * MAX_POWER;
+        s.velocity = {
+            vx: Math.cos(s.aimAngle) * speed,
+            vy: Math.sin(s.aimAngle) * speed,
+        };
+        s.movingStones = [];
+        s.activeStoneSettled = false;
+        s.phase = 'sliding';
+        syncDisplay();
 
-            function slide() {
-                const st = stateRef.current;
+        function slide() {
+            const st = stateRef.current;
+
+            // Move active stone
+            if (!st.activeStoneSettled) {
                 st.activeStone.x += st.velocity.vx;
                 st.activeStone.y += st.velocity.vy;
                 st.velocity.vx *= FRICTION;
                 st.velocity.vy *= FRICTION;
 
-                const spd = Math.sqrt(st.velocity.vx ** 2 + st.velocity.vy ** 2);
-                const outOfBounds =
-                    st.activeStone.x < 20 || st.activeStone.x > CANVAS_WIDTH - 20 ||
-                    st.activeStone.y < 20 || st.activeStone.y > CANVAS_HEIGHT - 20;
+                checkCollisionsWithPlaced(st.playerStones, st.cpuStones, st.movingStones, st.activeStone, st.velocity);
 
-                if (spd < 0.3 || outOfBounds) {
-                    if (!outOfBounds) {
-                        st.playerStones.push({ ...st.activeStone });
+                const spd = Math.sqrt(st.velocity.vx ** 2 + st.velocity.vy ** 2);
+                if (spd < 0.3 || isOutOfBounds(st.activeStone)) {
+                    if (!isOutOfBounds(st.activeStone)) {
+                        st.playerStones.push({ x: st.activeStone.x, y: st.activeStone.y });
                     }
-                    st.stonesThrown++;
-                    if (st.stonesThrown >= STONES_PER_SIDE * 2) {
-                        finishEnd();
-                    } else {
-                        // CPU's turn
-                        setTimeout(() => doCpuThrow(), 400);
-                    }
-                    return;
+                    st.activeStoneSettled = true;
                 }
-                render();
-                st.animFrame = requestAnimationFrame(slide);
             }
-            stateRef.current.animFrame = requestAnimationFrame(slide);
+
+            // Move knocked stones
+            const msCount = st.movingStones.length;
+            for (let j = 0; j < msCount; j++) {
+                const ms = st.movingStones[j];
+                ms.x += ms.vx;
+                ms.y += ms.vy;
+                ms.vx *= FRICTION;
+                ms.vy *= FRICTION;
+                checkCollisionsWithPlaced(st.playerStones, st.cpuStones, st.movingStones, ms, ms);
+            }
+
+            // Settle stopped moving stones
+            for (let i = st.movingStones.length - 1; i >= 0; i--) {
+                const ms = st.movingStones[i];
+                const msSpd = Math.sqrt(ms.vx ** 2 + ms.vy ** 2);
+                if (msSpd < 0.3 || isOutOfBounds(ms)) {
+                    if (!isOutOfBounds(ms)) {
+                        if (ms.isPlayer) st.playerStones.push({ x: ms.x, y: ms.y });
+                        else st.cpuStones.push({ x: ms.x, y: ms.y });
+                    }
+                    st.movingStones.splice(i, 1);
+                }
+            }
+
+            if (st.activeStoneSettled && st.movingStones.length === 0) {
+                st.stonesThrown++;
+                if (st.stonesThrown >= STONES_PER_SIDE * 2) {
+                    finishEnd();
+                } else {
+                    setTimeout(() => doCpuThrow(), 400);
+                }
+                return;
+            }
+
+            render();
+            st.animFrame = requestAnimationFrame(slide);
         }
+        stateRef.current.animFrame = requestAnimationFrame(slide);
     }, [render, syncDisplay, doCpuThrow, finishEnd]);
+
+    // Catch mouseup even if released outside the canvas
+    useEffect(() => {
+        document.addEventListener('mouseup', handleMouseUp);
+        return () => document.removeEventListener('mouseup', handleMouseUp);
+    }, [handleMouseUp]);
 
     const handleNextEnd = useCallback(() => {
         const s = stateRef.current;
@@ -431,7 +555,9 @@ export default function CurlingGame() {
         s.phase = 'aim';
         s.playerStones = [];
         s.cpuStones = [];
+        s.movingStones = [];
         s.activeStone = { x: CANVAS_WIDTH / 2, y: DELIVERY_Y };
+        s.activeStoneSettled = false;
         s.velocity = { vx: 0, vy: 0 };
         s.aimAngle = -Math.PI / 2;
         s.power = 0;
@@ -512,7 +638,7 @@ export default function CurlingGame() {
                     ref={canvasRef}
                     width={CANVAS_WIDTH}
                     height={CANVAS_HEIGHT}
-                    onClick={handleClick}
+                    onMouseDown={handleMouseDown}
                     onMouseMove={handleMouseMove}
                     style={{
                         borderRadius: '12px',
@@ -521,6 +647,7 @@ export default function CurlingGame() {
                         display: 'block',
                         maxWidth: '100%',
                         maxHeight: '60vh',
+                        userSelect: 'none',
                     }}
                 />
 
@@ -551,10 +678,10 @@ export default function CurlingGame() {
                                 height: '100%',
                                 background: `hsl(${120 - displayState.power * 1.2}, 80%, 45%)`,
                                 borderRadius: 7,
-                                transition: 'width 0.05s',
+                                transition: 'width 0.03s',
                             }} />
                         </div>
-                        <div style={{ fontSize: '0.7rem', marginTop: 3, opacity: 0.7 }}>Click to release!</div>
+                        <div style={{ fontSize: '0.7rem', marginTop: 3, opacity: 0.7 }}>Release to throw!</div>
                     </div>
                 )}
 
@@ -687,10 +814,10 @@ export default function CurlingGame() {
                 lineHeight: 1.6,
             }}>
                 {phase === 'aim' && isPlayerTurn && (
-                    <span>🎯 <strong>Move mouse</strong> to aim, then <strong>click</strong> to set power</span>
+                    <span>🎯 <strong>Move mouse</strong> to aim, then <strong>hold</strong> to charge power</span>
                 )}
                 {phase === 'power' && (
-                    <span>⚡ <strong>Click</strong> when the power bar is where you want it!</span>
+                    <span>⚡ <strong>Release</strong> when the power bar is where you want it!</span>
                 )}
                 {(phase === 'sliding' || phase === 'cpu') && (
                     <span>{phase === 'cpu' ? '🤖 CPU is throwing...' : '🥌 Stone is sliding...'}</span>
