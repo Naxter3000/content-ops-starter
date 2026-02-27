@@ -202,7 +202,8 @@ function makeInitialState(playerGoesFirst = true) {
         aimAngle: -Math.PI / 2,
         power: 0,
         powerDir: 1,
-        curl: 0,             // -1 = left curve, 0 = straight, 1 = right curve
+        curl: 0,             // -1..1 continuous: negative = left curve, positive = right curve
+        mouseDownX: CANVAS_WIDTH / 2,
         playerGoesFirst,
         nextThrowMsg: playerGoesFirst ? 'You throw first!' : 'CPU throws first!',
         stonesThrown: 0,
@@ -278,20 +279,11 @@ export default function CurlingGame() {
                 s.activeStone.y + aimLen * Math.sin(s.aimAngle)
             );
             drawStone(ctx, s.activeStone, isPlayerStone);
-
-            // Curl indicator above stone
-            if (s.curl !== 0) {
-                ctx.fillStyle = 'rgba(255,255,255,0.95)';
-                ctx.font = 'bold 20px sans-serif';
-                ctx.textAlign = 'center';
-                ctx.fillText(s.curl < 0 ? '↺' : '↻', s.activeStone.x, s.activeStone.y - STONE_RADIUS - 8);
-                ctx.textAlign = 'left';
-            }
         } else if (s.phase === 'power') {
             drawStone(ctx, s.activeStone, isPlayerStone);
 
-            // Curl indicator
-            if (s.curl !== 0) {
+            // Curl icon above stone
+            if (Math.abs(s.curl) > 0.05) {
                 ctx.fillStyle = 'rgba(255,255,255,0.95)';
                 ctx.font = 'bold 20px sans-serif';
                 ctx.textAlign = 'center';
@@ -299,16 +291,20 @@ export default function CurlingGame() {
                 ctx.textAlign = 'left';
             }
 
-            // Power bar on canvas
+            // Power bar + curl bar on canvas
             const barW = 200, barH = 18;
             const barX = CANVAS_WIDTH / 2 - barW / 2;
             const barY = DELIVERY_Y - 60;
-            ctx.fillStyle = 'rgba(0,0,20,0.75)';
-            ctx.fillRect(barX - 12, barY - 26, barW + 24, barH + 44);
+            const curlBarH = 12;
+            const curlBarY = barY + barH + 10;
+            ctx.fillStyle = 'rgba(0,0,20,0.80)';
+            ctx.fillRect(barX - 12, barY - 26, barW + 24, barH + 62);
+            // Power label
             ctx.fillStyle = '#fff';
             ctx.font = 'bold 12px sans-serif';
             ctx.textAlign = 'center';
             ctx.fillText('POWER — release to throw!', CANVAS_WIDTH / 2, barY - 8);
+            // Power bar
             ctx.fillStyle = '#2d3748';
             ctx.fillRect(barX, barY, barW, barH);
             const fillW = (s.power / 100) * barW;
@@ -317,6 +313,32 @@ export default function CurlingGame() {
             ctx.strokeStyle = 'rgba(255,255,255,0.3)';
             ctx.lineWidth = 1;
             ctx.strokeRect(barX, barY, barW, barH);
+            // Curl bar background
+            ctx.fillStyle = 'rgba(255,255,255,0.1)';
+            ctx.fillRect(barX, curlBarY, barW, curlBarH);
+            // Curl fill from center
+            const halfW = barW / 2;
+            if (Math.abs(s.curl) > 0.01) {
+                ctx.fillStyle = s.curl < 0 ? '#63b3ed' : '#fc8181';
+                const fillX = s.curl < 0 ? CANVAS_WIDTH / 2 + s.curl * halfW : CANVAS_WIDTH / 2;
+                ctx.fillRect(fillX, curlBarY, Math.abs(s.curl) * halfW, curlBarH);
+            }
+            // Curl bar center marker
+            ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(CANVAS_WIDTH / 2, curlBarY);
+            ctx.lineTo(CANVAS_WIDTH / 2, curlBarY + curlBarH);
+            ctx.stroke();
+            ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+            ctx.strokeRect(barX, curlBarY, barW, curlBarH);
+            // Curl label
+            ctx.fillStyle = 'rgba(255,255,255,0.85)';
+            ctx.font = '10px sans-serif';
+            ctx.textAlign = 'center';
+            const pct = Math.round(Math.abs(s.curl) * 100);
+            const curlLabel = s.curl < -0.05 ? `↺ Left  ${pct}%` : s.curl > 0.05 ? `Right ${pct}%  ↻` : '● Straight';
+            ctx.fillText(curlLabel, CANVAS_WIDTH / 2, curlBarY + curlBarH + 12);
             ctx.textAlign = 'left';
         } else if ((s.phase === 'sliding' || s.phase === 'cpu') && !s.activeStoneSettled) {
             drawStone(ctx, s.activeStone, s.phase === 'sliding');
@@ -453,21 +475,32 @@ export default function CurlingGame() {
 
     const handleMouseMove = useCallback((e) => {
         const s = stateRef.current;
-        if (s.phase !== 'aim') return;
         const canvas = canvasRef.current;
         const rect = canvas.getBoundingClientRect();
         const scaleX = CANVAS_WIDTH / rect.width;
         const scaleY = CANVAS_HEIGHT / rect.height;
-        s.aimAngle = Math.atan2(
-            (e.clientY - rect.top) * scaleY - s.activeStone.y,
-            (e.clientX - rect.left) * scaleX - s.activeStone.x
-        );
-        render();
-    }, [render]);
+        if (s.phase === 'aim') {
+            s.aimAngle = Math.atan2(
+                (e.clientY - rect.top) * scaleY - s.activeStone.y,
+                (e.clientX - rect.left) * scaleX - s.activeStone.x
+            );
+            render();
+        } else if (s.phase === 'power') {
+            const currentX = (e.clientX - rect.left) * scaleX;
+            const deltaX = currentX - s.mouseDownX;
+            s.curl = Math.max(-1, Math.min(1, deltaX / 80));
+            syncDisplay();
+            render();
+        }
+    }, [render, syncDisplay]);
 
-    const handleMouseDown = useCallback(() => {
+    const handleMouseDown = useCallback((e) => {
         const s = stateRef.current;
         if (s.phase !== 'aim' || !isPlayerTurnNow(s)) return;
+        const canvas = canvasRef.current;
+        const rect = canvas.getBoundingClientRect();
+        s.mouseDownX = (e.clientX - rect.left) * (CANVAS_WIDTH / rect.width);
+        s.curl = 0;
         s.phase = 'power';
         s.power = 0;
         s.powerDir = 1;
@@ -571,13 +604,6 @@ export default function CurlingGame() {
         }
     }, [startNextThrow, syncDisplay, render, doCpuThrow]);
 
-    const handleSetCurl = useCallback((value) => {
-        const s = stateRef.current;
-        if (s.phase !== 'aim') return;
-        s.curl = value;
-        syncDisplay();
-        render();
-    }, [syncDisplay, render]);
 
     const handleRestart = useCallback(() => {
         cancelAnimationFrame(stateRef.current.animFrame);
@@ -655,27 +681,6 @@ export default function CurlingGame() {
 
                 {/* Canvas + controls */}
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-
-                    {/* Curl selector — shown during player aim */}
-                    <div style={{
-                        display: 'flex', gap: 8, marginBottom: 8,
-                        visibility: (phase === 'aim' && isPlayerTurn) ? 'visible' : 'hidden',
-                    }}>
-                        <span style={{ color: 'rgba(255,255,255,0.7)', fontSize: '0.8rem', alignSelf: 'center' }}>Curl:</span>
-                        {[{ v: -1, label: '↺ Left' }, { v: 0, label: '● Straight' }, { v: 1, label: 'Right ↻' }].map(({ v, label }) => (
-                            <button
-                                key={v}
-                                onMouseDown={(e) => { e.preventDefault(); handleSetCurl(v); }}
-                                style={{
-                                    ...btnBase,
-                                    background: displayState.curl === v ? '#e2e8f0' : 'rgba(255,255,255,0.15)',
-                                    color: displayState.curl === v ? '#1a202c' : '#fff',
-                                }}
-                            >
-                                {label}
-                            </button>
-                        ))}
-                    </div>
 
                     {/* Canvas container */}
                     <div style={{ position: 'relative', display: 'inline-block' }}>
@@ -813,8 +818,8 @@ export default function CurlingGame() {
                         marginTop: 10, color: 'rgba(255,255,255,0.8)', textAlign: 'center',
                         fontSize: '0.85rem', maxWidth: 480, lineHeight: 1.6,
                     }}>
-                        {phase === 'aim' && isPlayerTurn && <span>🎯 Aim with mouse • pick curl above • <strong>hold</strong> to charge</span>}
-                        {phase === 'power' && <span>⚡ <strong>Release</strong> to throw!</span>}
+                        {phase === 'aim' && isPlayerTurn && <span>🎯 Aim with mouse • <strong>hold</strong> to charge • move left/right for curl</span>}
+                        {phase === 'power' && <span>⚡ Move mouse left/right to curl • <strong>release</strong> to throw!</span>}
                         {phase === 'sliding' && <span>🥌 Stone sliding…</span>}
                         {phase === 'cpu' && <span>🤖 CPU throwing…</span>}
                         {phase === 'aim' && !isPlayerTurn && <span>🤖 CPU&apos;s turn…</span>}
@@ -846,8 +851,8 @@ export default function CurlingGame() {
                     <div style={{ fontWeight: 700, marginBottom: 4, color: '#90cdf4' }}>Curl</div>
                     <ul style={{ margin: '0 0 12px', paddingLeft: 16 }}>
                         <li>Stones curve as they slow down</li>
-                        <li>Pick <em>Left</em>, <em>Straight</em>, or <em>Right</em> curl before throwing</li>
-                        <li>The ↺ / ↻ symbol shows active curl</li>
+                        <li>While charging, <strong>move mouse left or right</strong> from where you clicked to set curl</li>
+                        <li>The curl bar shows direction &amp; amount</li>
                     </ul>
 
                     <div style={{ fontWeight: 700, marginBottom: 4, color: '#90cdf4' }}>Scoring</div>
