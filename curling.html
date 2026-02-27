@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mini Curling</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    background: linear-gradient(135deg, #0f2419 0%, #163426 50%, #1d3f30 100%);
+    background-attachment: fixed;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    position: relative;
+    color: #e8e6e3;
+}
+body::before {
+    content: '';
+    position: fixed;
+    top: 0; left: 0; width: 100%; height: 100%;
+    background:
+        radial-gradient(circle at 20% 80%, rgba(120, 119, 198, 0.3) 0%, transparent 50%),
+        radial-gradient(circle at 80% 20%, rgba(255, 255, 255, 0.1) 0%, transparent 50%),
+        radial-gradient(circle at 40% 40%, rgba(120, 119, 198, 0.15) 0%, transparent 50%);
+    pointer-events: none;
+    z-index: 0;
+}
+#app {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+}
+h1 {
+    color: #fff;
+    font-size: 2rem;
+    font-weight: 800;
+    letter-spacing: 2px;
+    margin-bottom: 8px;
+    text-shadow: 0 2px 8px rgba(0,0,0,0.4);
+    text-transform: uppercase;
+}
+#scoreboard {
+    display: flex;
+    gap: 24px;
+    margin-bottom: 12px;
+    background: rgba(255,255,255,0.12);
+    border-radius: 12px;
+    padding: 10px 24px;
+    color: #fff;
+    align-items: center;
+}
+.score-block { text-align: center; }
+.score-label { font-size: 0.7rem; opacity: 0.7; text-transform: uppercase; letter-spacing: 1px; }
+.score-value { font-size: 2rem; font-weight: 800; }
+.score-vs { opacity: 0.5; font-size: 1.2rem; }
+.score-end { border-left: 1px solid rgba(255,255,255,0.3); padding-left: 16px; text-align: center; }
+.score-end .score-value { font-size: 1.4rem; font-weight: 700; }
+#game-row { display: flex; gap: 20px; align-items: flex-start; }
+#canvas-col { display: flex; flex-direction: column; align-items: center; }
+#canvas-wrapper { position: relative; display: inline-block; }
+#gameCanvas {
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+    display: block;
+    max-width: 100%;
+    max-height: 60vh;
+    user-select: none;
+}
+#status {
+    margin-top: 10px;
+    color: rgba(255,255,255,0.8);
+    text-align: center;
+    font-size: 0.85rem;
+    max-width: 480px;
+    line-height: 1.6;
+}
+.overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    border-radius: 12px;
+}
+.overlay.hidden { display: none; }
+.overlay-box {
+    background: rgba(10,20,60,0.94);
+    border-radius: 16px;
+    padding: 32px 40px;
+    color: #fff;
+    text-align: center;
+    box-shadow: 0 4px 30px rgba(0,0,0,0.6);
+}
+.overlay-icon { font-size: 2.5rem; margin-bottom: 8px; }
+.overlay-title { font-size: 1.4rem; font-weight: 800; margin-bottom: 8px; }
+.overlay-sub { font-size: 1rem; margin-bottom: 20px; opacity: 0.9; }
+.overlay-btn {
+    border: none; border-radius: 8px; padding: 10px 28px;
+    font-size: 1rem; font-weight: 700; cursor: pointer;
+    background: #3182ce; color: #fff; transition: opacity 0.15s;
+}
+.overlay-btn:hover { opacity: 0.85; }
+.overlay-btn.green { background: #38a169; }
+#gameover-table {
+    width: 100%; font-size: 0.8rem; border-collapse: collapse; margin-bottom: 16px;
+}
+#gameover-table th { padding: 4px 8px; opacity: 0.6; }
+#gameover-table td { padding: 3px 8px; text-align: center; }
+#rules {
+    width: 190px;
+    background: rgba(255,255,255,0.08);
+    border-radius: 12px;
+    padding: 16px 18px;
+    color: #fff;
+    font-size: 0.82rem;
+    line-height: 1.65;
+    flex-shrink: 0;
+}
+.r-title { font-weight: 800; font-size: 1rem; margin-bottom: 10px; letter-spacing: 0.5px; }
+.r-head { font-weight: 700; margin-bottom: 4px; color: #90cdf4; margin-top: 10px; }
+.r-head:first-of-type { margin-top: 0; }
+#rules ul { padding-left: 16px; }
+#footer-note { margin-top: 8px; color: rgba(255,255,255,0.4); font-size: 0.75rem; }
+</style>
+</head>
+<body>
+<div id="app">
+    <h1>🥌 Mini Curling</h1>
+
+    <div id="scoreboard">
+        <div class="score-block">
+            <div class="score-label">You 🔴</div>
+            <div class="score-value" id="player-score">0</div>
+        </div>
+        <div class="score-vs">vs</div>
+        <div class="score-block">
+            <div class="score-label">CPU 🟡</div>
+            <div class="score-value" id="cpu-score">0</div>
+        </div>
+        <div class="score-end">
+            <div class="score-label">End</div>
+            <div class="score-value" id="end-display">1/3</div>
+        </div>
+    </div>
+
+    <div id="game-row">
+        <div id="canvas-col">
+            <div id="canvas-wrapper">
+                <canvas id="gameCanvas" width="480" height="700"></canvas>
+
+                <div class="overlay" id="overlay-start">
+                    <div class="overlay-box">
+                        <div class="overlay-icon">🪙</div>
+                        <div class="overlay-title">Coin Flip!</div>
+                        <div class="overlay-sub" id="coin-msg">You throw first!</div>
+                        <button class="overlay-btn" onclick="beginEnd()">Let's Play!</button>
+                    </div>
+                </div>
+
+                <div class="overlay hidden" id="overlay-endover">
+                    <div class="overlay-box">
+                        <div class="overlay-title" id="endover-title">End 1 Over!</div>
+                        <div style="margin-bottom:12px;font-size:0.9rem;opacity:0.85" id="endover-scores"></div>
+                        <div style="margin-bottom:16px;font-size:0.85rem;opacity:0.75" id="endover-next"></div>
+                        <button class="overlay-btn" onclick="beginEnd()">Next End →</button>
+                    </div>
+                </div>
+
+                <div class="overlay hidden" id="overlay-gameover">
+                    <div class="overlay-box" style="min-width:260px">
+                        <div class="overlay-icon" id="gameover-icon">🏆</div>
+                        <div class="overlay-title" id="gameover-title">You Win!</div>
+                        <div style="margin-bottom:16px;font-size:1.1rem" id="gameover-final"></div>
+                        <table id="gameover-table">
+                            <thead><tr style="opacity:0.6">
+                                <th>End</th>
+                                <th style="color:#fc8181">You</th>
+                                <th style="color:#fbd38d">CPU</th>
+                            </tr></thead>
+                            <tbody id="gameover-tbody"></tbody>
+                        </table>
+                        <button class="overlay-btn green" onclick="restartGame()">Play Again</button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="status"></div>
+        </div>
+
+        <div id="rules">
+            <div class="r-title">📖 How to Play</div>
+            <div class="r-head">Throwing</div>
+            <ul>
+                <li>Move the mouse to aim</li>
+                <li><strong>Hold</strong> the mouse button to charge power</li>
+                <li><strong>Release</strong> to throw</li>
+            </ul>
+            <div class="r-head">Curl</div>
+            <ul>
+                <li>Stones curve as they slow down</li>
+                <li>While charging, <strong>move mouse left or right</strong> from where you clicked to set curl</li>
+                <li>The curl bar shows direction &amp; amount</li>
+            </ul>
+            <div class="r-head">Scoring</div>
+            <ul>
+                <li>Only the team with the <strong>closest stone</strong> scores</li>
+                <li>They score 1 point per stone closer than any opponent stone</li>
+                <li>Stones must be inside the house (outer ring)</li>
+            </ul>
+            <div class="r-head">Hammer</div>
+            <ul>
+                <li>The <strong>scoring team</strong> throws first next end</li>
+                <li>Going last is an advantage — called the <em>hammer</em></li>
+                <li>First end decided by coin flip</li>
+            </ul>
+            <div class="r-head">Game</div>
+            <ul>
+                <li>4 stones each per end</li>
+                <li>3 ends total</li>
+                <li>Highest score wins!</li>
+            </ul>
+        </div>
+    </div>
+
+    <div id="footer-note">🔴 Red = You &nbsp;•&nbsp; 🟡 Yellow = CPU &nbsp;•&nbsp; 4 stones each &nbsp;•&nbsp; 3 ends</div>
+</div>
+
+<script>
+const CANVAS_WIDTH = 480, CANVAS_HEIGHT = 700;
+const STONE_RADIUS = 18, FRICTION = 0.988, MAX_POWER = 18, CURL_STRENGTH = 0.026;
+const HOUSE_X = CANVAS_WIDTH / 2, HOUSE_Y = 160, DELIVERY_Y = CANVAS_HEIGHT - 80;
+const TOTAL_ENDS = 3, STONES_PER_SIDE = 4;
+
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+let state;
+
+function makeState(playerGoesFirst) {
+    return {
+        phase: 'start',
+        playerStones: [], cpuStones: [], movingStones: [],
+        activeStone: { x: CANVAS_WIDTH / 2, y: DELIVERY_Y },
+        activeStoneSettled: false,
+        velocity: { vx: 0, vy: 0 },
+        aimAngle: -Math.PI / 2,
+        power: 0, powerDir: 1, curl: 0,
+        mouseDownX: CANVAS_WIDTH / 2,
+        playerGoesFirst,
+        nextThrowMsg: playerGoesFirst ? 'You throw first!' : 'CPU throws first!',
+        stonesThrown: 0, currentEnd: 1, playerScore: 0, cpuScore: 0,
+        endScores: [], animFrame: null,
+    };
+}
+
+function isPlayerTurn() {
+    return state.playerGoesFirst ? state.stonesThrown % 2 === 0 : state.stonesThrown % 2 !== 0;
+}
+
+// ── Drawing ────────────────────────────────────────────────────────────────
+
+function drawIce() {
+    ctx.fillStyle = '#cfe8f9';
+    ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+    ctx.fillStyle = '#e8f4fd';
+    for (let y = 0; y < CANVAS_HEIGHT; y += 40) ctx.fillRect(0, y, CANVAS_WIDTH, 18);
+    ctx.strokeStyle = '#a0c8e8'; ctx.lineWidth = 3;
+    ctx.strokeRect(20, 20, CANVAS_WIDTH - 40, CANVAS_HEIGHT - 40);
+    ctx.lineWidth = 1;
+    ctx.setLineDash([8, 6]);
+    ctx.beginPath(); ctx.moveTo(CANVAS_WIDTH / 2, 20); ctx.lineTo(CANVAS_WIDTH / 2, CANVAS_HEIGHT - 20); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.strokeStyle = '#3182ce'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(20, DELIVERY_Y - 60); ctx.lineTo(CANVAS_WIDTH - 20, DELIVERY_Y - 60); ctx.stroke();
+    ctx.fillStyle = '#3182ce'; ctx.font = 'bold 11px sans-serif';
+    ctx.fillText('HOG LINE', CANVAS_WIDTH - 95, DELIVERY_Y - 65);
+}
+
+function drawHouse() {
+    [{ r: 72, c: '#e53e3e' }, { r: 48, c: '#fc8181' }, { r: 24, c: '#ecc94b' }, { r: 8, c: '#e53e3e' }].forEach(({ r, c }) => {
+        ctx.beginPath(); ctx.arc(HOUSE_X, HOUSE_Y, r, 0, Math.PI * 2);
+        ctx.fillStyle = c; ctx.fill();
+        ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 1; ctx.stroke();
+    });
+    ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(HOUSE_X - 72, HOUSE_Y); ctx.lineTo(HOUSE_X + 72, HOUSE_Y); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(HOUSE_X, HOUSE_Y - 72); ctx.lineTo(HOUSE_X, HOUSE_Y + 72); ctx.stroke();
+}
+
+function drawStone(s, isPlayer) {
+    ctx.beginPath(); ctx.arc(s.x + 3, s.y + 3, STONE_RADIUS, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(0,0,0,0.15)'; ctx.fill();
+    ctx.beginPath(); ctx.arc(s.x, s.y, STONE_RADIUS, 0, Math.PI * 2);
+    const g = ctx.createRadialGradient(s.x - 5, s.y - 5, 2, s.x, s.y, STONE_RADIUS);
+    g.addColorStop(0, isPlayer ? '#fc8181' : '#fbd38d');
+    g.addColorStop(1, isPlayer ? '#c53030' : '#c05621');
+    ctx.fillStyle = g; ctx.fill();
+    ctx.strokeStyle = isPlayer ? '#742a2a' : '#7b341e'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.beginPath(); ctx.arc(s.x, s.y, STONE_RADIUS * 0.45, 0, Math.PI * 2);
+    ctx.fillStyle = isPlayer ? '#742a2a' : '#7b341e'; ctx.fill();
+    ctx.beginPath(); ctx.arc(s.x, s.y, STONE_RADIUS * 0.25, 0, Math.PI * 2);
+    ctx.fillStyle = isPlayer ? '#fc8181' : '#fbd38d'; ctx.fill();
+}
+
+function drawAimLine(fx, fy, tx, ty) {
+    ctx.setLineDash([6, 5]); ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(fx, fy); ctx.lineTo(tx, ty); ctx.stroke();
+    ctx.setLineDash([]);
+    const a = Math.atan2(ty - fy, tx - fx);
+    ctx.fillStyle = 'rgba(255,255,255,0.8)';
+    ctx.beginPath();
+    ctx.moveTo(tx, ty);
+    ctx.lineTo(tx - 12 * Math.cos(a - 0.4), ty - 12 * Math.sin(a - 0.4));
+    ctx.lineTo(tx - 12 * Math.cos(a + 0.4), ty - 12 * Math.sin(a + 0.4));
+    ctx.closePath(); ctx.fill();
+}
+
+function render() {
+    ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+    drawIce(); drawHouse();
+    state.playerStones.forEach(s => drawStone(s, true));
+    state.cpuStones.forEach(s => drawStone(s, false));
+    state.movingStones.forEach(s => drawStone(s, s.isPlayer));
+
+    const playerStone = isPlayerTurn();
+
+    if (state.phase === 'aim') {
+        drawAimLine(
+            state.activeStone.x, state.activeStone.y,
+            state.activeStone.x + 120 * Math.cos(state.aimAngle),
+            state.activeStone.y + 120 * Math.sin(state.aimAngle)
+        );
+        drawStone(state.activeStone, playerStone);
+    } else if (state.phase === 'power') {
+        drawStone(state.activeStone, playerStone);
+        if (Math.abs(state.curl) > 0.05) {
+            ctx.fillStyle = 'rgba(255,255,255,0.95)'; ctx.font = 'bold 20px sans-serif'; ctx.textAlign = 'center';
+            ctx.fillText(state.curl < 0 ? '↺' : '↻', state.activeStone.x, state.activeStone.y - STONE_RADIUS - 8);
+            ctx.textAlign = 'left';
+        }
+        const barW = 200, barH = 18, barX = CANVAS_WIDTH / 2 - 100, barY = DELIVERY_Y - 60;
+        const curlBarH = 12, curlBarY = barY + barH + 10;
+        ctx.fillStyle = 'rgba(0,0,20,0.80)'; ctx.fillRect(barX - 12, barY - 26, barW + 24, barH + 62);
+        ctx.fillStyle = '#fff'; ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center';
+        ctx.fillText('POWER — release to throw!', CANVAS_WIDTH / 2, barY - 8);
+        ctx.fillStyle = '#2d3748'; ctx.fillRect(barX, barY, barW, barH);
+        ctx.fillStyle = `hsl(${120 - state.power * 1.2}, 80%, 45%)`;
+        ctx.fillRect(barX, barY, (state.power / 100) * barW, barH);
+        ctx.strokeStyle = 'rgba(255,255,255,0.3)'; ctx.lineWidth = 1; ctx.strokeRect(barX, barY, barW, barH);
+        ctx.fillStyle = 'rgba(255,255,255,0.1)'; ctx.fillRect(barX, curlBarY, barW, curlBarH);
+        if (Math.abs(state.curl) > 0.01) {
+            ctx.fillStyle = state.curl < 0 ? '#63b3ed' : '#fc8181';
+            const fx = state.curl < 0 ? CANVAS_WIDTH / 2 + state.curl * 100 : CANVAS_WIDTH / 2;
+            ctx.fillRect(fx, curlBarY, Math.abs(state.curl) * 100, curlBarH);
+        }
+        ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(CANVAS_WIDTH / 2, curlBarY); ctx.lineTo(CANVAS_WIDTH / 2, curlBarY + curlBarH); ctx.stroke();
+        ctx.strokeStyle = 'rgba(255,255,255,0.3)'; ctx.strokeRect(barX, curlBarY, barW, curlBarH);
+        ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.font = '10px sans-serif'; ctx.textAlign = 'center';
+        const pct = Math.round(Math.abs(state.curl) * 100);
+        ctx.fillText(state.curl < -0.05 ? `↺ Left  ${pct}%` : state.curl > 0.05 ? `Right ${pct}%  ↻` : '● Straight', CANVAS_WIDTH / 2, curlBarY + curlBarH + 12);
+        ctx.textAlign = 'left';
+    } else if ((state.phase === 'sliding' || state.phase === 'cpu') && !state.activeStoneSettled) {
+        drawStone(state.activeStone, state.phase === 'sliding');
+    }
+
+    if (['start', 'endOver', 'gameOver'].includes(state.phase)) {
+        ctx.fillStyle = 'rgba(0,0,30,0.55)'; ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+    }
+}
+
+// ── Physics ────────────────────────────────────────────────────────────────
+
+function applyCurl(vel, curl) {
+    const spd = Math.sqrt(vel.vx ** 2 + vel.vy ** 2);
+    if (spd < 0.4 || curl === 0) return;
+    vel.vx += curl * CURL_STRENGTH * (-vel.vy / spd);
+    vel.vy += curl * CURL_STRENGTH * (vel.vx / spd);
+}
+
+function resolveCollision(mover, vel, placed) {
+    const dx = placed.x - mover.x, dy = placed.y - mover.y;
+    const d = Math.sqrt(dx * dx + dy * dy);
+    if (d >= STONE_RADIUS * 2 || d === 0) return null;
+    const nx = dx / d, ny = dy / d, dot = vel.vx * nx + vel.vy * ny;
+    if (dot <= 0) return null;
+    vel.vx -= dot * nx; vel.vy -= dot * ny;
+    const ov = STONE_RADIUS * 2 - d;
+    mover.x -= ov * nx * 0.5; mover.y -= ov * ny * 0.5;
+    return { x: placed.x + ov * nx * 0.5, y: placed.y + ov * ny * 0.5, vx: dot * nx, vy: dot * ny };
+}
+
+function checkCollisions(mover, vel) {
+    for (let i = state.playerStones.length - 1; i >= 0; i--) {
+        const r = resolveCollision(mover, vel, state.playerStones[i]);
+        if (r) { state.movingStones.push({ ...r, isPlayer: true }); state.playerStones.splice(i, 1); }
+    }
+    for (let i = state.cpuStones.length - 1; i >= 0; i--) {
+        const r = resolveCollision(mover, vel, state.cpuStones[i]);
+        if (r) { state.movingStones.push({ ...r, isPlayer: false }); state.cpuStones.splice(i, 1); }
+    }
+}
+
+function isOOB(s) { return s.x < 20 || s.x > CANVAS_WIDTH - 20 || s.y < 20 || s.y > CANVAS_HEIGHT - 20; }
+
+function scoreStones() {
+    const all = [
+        ...state.playerStones.map(s => ({ ...s, team: 'player' })),
+        ...state.cpuStones.map(s => ({ ...s, team: 'cpu' })),
+    ].map(s => ({ ...s, d: Math.hypot(s.x - HOUSE_X, s.y - HOUSE_Y) })).sort((a, b) => a.d - b.d);
+    const scored = { player: 0, cpu: 0 };
+    if (!all.length) return scored;
+    const closest = all[0].team;
+    for (const s of all) {
+        if (s.team !== closest) break;
+        if (s.d < 72 + STONE_RADIUS) scored[closest]++;
+    }
+    return scored;
+}
+
+// ── Game flow ──────────────────────────────────────────────────────────────
+
+function showOverlay(id) {
+    ['overlay-start', 'overlay-endover', 'overlay-gameover'].forEach(o =>
+        document.getElementById(o).classList.toggle('hidden', o !== id)
+    );
+}
+function hideOverlays() {
+    ['overlay-start', 'overlay-endover', 'overlay-gameover'].forEach(o =>
+        document.getElementById(o).classList.add('hidden')
+    );
+}
+
+function updateUI() {
+    document.getElementById('player-score').textContent = state.playerScore;
+    document.getElementById('cpu-score').textContent = state.cpuScore;
+    document.getElementById('end-display').textContent = `${state.currentEnd}/${TOTAL_ENDS}`;
+    const pt = isPlayerTurn();
+    const s = document.getElementById('status');
+    if (state.phase === 'aim' && pt) s.innerHTML = '🎯 Aim with mouse &bull; <strong>hold</strong> to charge &bull; move left/right for curl';
+    else if (state.phase === 'power') s.innerHTML = '⚡ Move mouse left/right to curl &bull; <strong>release</strong> to throw!';
+    else if (state.phase === 'sliding') s.textContent = '🥌 Stone sliding…';
+    else if (state.phase === 'cpu') s.textContent = '🤖 CPU throwing…';
+    else if (state.phase === 'aim' && !pt) s.textContent = "🤖 CPU's turn…";
+    else s.textContent = '';
+    canvas.style.cursor = state.phase === 'aim' ? 'crosshair' : state.phase === 'power' ? 'pointer' : 'default';
+}
+
+function startNextThrow() {
+    state.activeStone = { x: CANVAS_WIDTH / 2, y: DELIVERY_Y };
+    state.velocity = { vx: 0, vy: 0 };
+    state.aimAngle = -Math.PI / 2;
+    state.power = 0; state.powerDir = 1; state.curl = 0;
+    state.movingStones = []; state.activeStoneSettled = false;
+    state.phase = 'aim';
+    hideOverlays(); updateUI(); render();
+}
+
+function finishEnd() {
+    const ended = scoreStones();
+    state.playerScore += ended.player;
+    state.cpuScore += ended.cpu;
+    state.endScores.push({ end: state.currentEnd, player: ended.player, cpu: ended.cpu });
+
+    if (state.currentEnd >= TOTAL_ENDS) {
+        state.phase = 'gameOver';
+        document.getElementById('gameover-icon').textContent = state.playerScore > state.cpuScore ? '🏆' : state.playerScore < state.cpuScore ? '😞' : '🤝';
+        document.getElementById('gameover-title').textContent = state.playerScore > state.cpuScore ? 'You Win!' : state.playerScore < state.cpuScore ? 'CPU Wins!' : 'Draw!';
+        document.getElementById('gameover-final').innerHTML = `<span style="color:#fc8181">You: ${state.playerScore}</span> — <span style="color:#fbd38d">CPU: ${state.cpuScore}</span>`;
+        document.getElementById('gameover-tbody').innerHTML = state.endScores.map(e =>
+            `<tr><td>${e.end}</td><td style="color:#fc8181">${e.player}</td><td style="color:#fbd38d">${e.cpu}</td></tr>`
+        ).join('');
+        showOverlay('overlay-gameover');
+    } else {
+        state.currentEnd++;
+        state.stonesThrown = 0;
+        state.playerStones = []; state.cpuStones = [];
+        if (ended.player > 0 && ended.cpu === 0) {
+            state.playerGoesFirst = true; state.nextThrowMsg = 'You throw first (you scored)';
+        } else if (ended.cpu > 0 && ended.player === 0) {
+            state.playerGoesFirst = false; state.nextThrowMsg = 'CPU throws first (CPU scored)';
+        } else {
+            state.playerGoesFirst = Math.random() < 0.5;
+            state.nextThrowMsg = state.playerGoesFirst ? 'You throw first (coin flip)' : 'CPU throws first (coin flip)';
+        }
+        state.phase = 'endOver';
+        const last = state.endScores[state.endScores.length - 1];
+        document.getElementById('endover-title').textContent = `End ${state.currentEnd - 1} Over!`;
+        document.getElementById('endover-scores').innerHTML = `You scored <strong>${last.player}</strong> &nbsp;|&nbsp; CPU scored <strong>${last.cpu}</strong>`;
+        document.getElementById('endover-next').textContent = `🪙 Next end: ${state.nextThrowMsg}`;
+        showOverlay('overlay-endover');
+    }
+    updateUI(); render();
+}
+
+function afterStoneSets() {
+    state.stonesThrown++;
+    if (state.stonesThrown >= STONES_PER_SIDE * 2) finishEnd();
+    else if (isPlayerTurn()) startNextThrow();
+    else setTimeout(doCpuThrow, 400);
+}
+
+function slideLoop() {
+    if (!state.activeStoneSettled) {
+        applyCurl(state.velocity, state.curl);
+        state.activeStone.x += state.velocity.vx;
+        state.activeStone.y += state.velocity.vy;
+        state.velocity.vx *= FRICTION;
+        state.velocity.vy *= FRICTION;
+        checkCollisions(state.activeStone, state.velocity);
+        if (Math.hypot(state.velocity.vx, state.velocity.vy) < 0.3 || isOOB(state.activeStone)) {
+            if (!isOOB(state.activeStone)) {
+                if (state.phase === 'sliding') state.playerStones.push({ x: state.activeStone.x, y: state.activeStone.y });
+                else state.cpuStones.push({ x: state.activeStone.x, y: state.activeStone.y });
+            }
+            state.activeStoneSettled = true;
+        }
+    }
+    for (let j = 0; j < state.movingStones.length; j++) {
+        const ms = state.movingStones[j];
+        ms.x += ms.vx; ms.y += ms.vy; ms.vx *= FRICTION; ms.vy *= FRICTION;
+        checkCollisions(ms, ms);
+    }
+    for (let i = state.movingStones.length - 1; i >= 0; i--) {
+        const ms = state.movingStones[i];
+        if (Math.hypot(ms.vx, ms.vy) < 0.3 || isOOB(ms)) {
+            if (!isOOB(ms)) {
+                if (ms.isPlayer) state.playerStones.push({ x: ms.x, y: ms.y });
+                else state.cpuStones.push({ x: ms.x, y: ms.y });
+            }
+            state.movingStones.splice(i, 1);
+        }
+    }
+    if (state.activeStoneSettled && state.movingStones.length === 0) { afterStoneSets(); return; }
+    render();
+    state.animFrame = requestAnimationFrame(slideLoop);
+}
+
+function doCpuThrow() {
+    state.phase = 'cpu'; state.movingStones = []; state.activeStoneSettled = false;
+    state.curl = [-1, 0, 0, 1][Math.floor(Math.random() * 4)];
+    const tx = HOUSE_X + (Math.random() - 0.5) * 60;
+    const ty = HOUSE_Y + (Math.random() - 0.5) * 40;
+    const dx = tx - CANVAS_WIDTH / 2, dy = ty - DELIVERY_Y;
+    const d = Math.hypot(dx, dy), spd = 9 + Math.random() * 4;
+    state.activeStone = { x: CANVAS_WIDTH / 2, y: DELIVERY_Y };
+    state.velocity = { vx: (dx / d) * spd, vy: (dy / d) * spd };
+    updateUI(); render();
+    state.animFrame = requestAnimationFrame(slideLoop);
+}
+
+// ── Input ──────────────────────────────────────────────────────────────────
+
+canvas.addEventListener('mousemove', e => {
+    const r = canvas.getBoundingClientRect();
+    const sx = CANVAS_WIDTH / r.width, sy = CANVAS_HEIGHT / r.height;
+    if (state.phase === 'aim') {
+        state.aimAngle = Math.atan2((e.clientY - r.top) * sy - state.activeStone.y, (e.clientX - r.left) * sx - state.activeStone.x);
+        render();
+    } else if (state.phase === 'power') {
+        state.curl = Math.max(-1, Math.min(1, ((e.clientX - r.left) * sx - state.mouseDownX) / 80));
+        render();
+    }
+});
+
+canvas.addEventListener('mousedown', e => {
+    if (state.phase !== 'aim' || !isPlayerTurn()) return;
+    const r = canvas.getBoundingClientRect();
+    state.mouseDownX = (e.clientX - r.left) * (CANVAS_WIDTH / r.width);
+    state.curl = 0; state.phase = 'power'; state.power = 0; state.powerDir = 1;
+    updateUI();
+    function animatePower() {
+        if (state.phase !== 'power') return;
+        state.power += state.powerDir * 0.7;
+        if (state.power >= 100) { state.power = 100; state.powerDir = -1; }
+        if (state.power <= 0) { state.power = 0; state.powerDir = 1; }
+        render();
+        state.animFrame = requestAnimationFrame(animatePower);
+    }
+    state.animFrame = requestAnimationFrame(animatePower);
+});
+
+document.addEventListener('mouseup', () => {
+    if (state.phase !== 'power') return;
+    cancelAnimationFrame(state.animFrame);
+    const spd = (state.power / 100) * MAX_POWER;
+    state.velocity = { vx: Math.cos(state.aimAngle) * spd, vy: Math.sin(state.aimAngle) * spd };
+    state.movingStones = []; state.activeStoneSettled = false;
+    state.phase = 'sliding'; updateUI();
+    state.animFrame = requestAnimationFrame(slideLoop);
+});
+
+// ── Overlay buttons ────────────────────────────────────────────────────────
+
+function beginEnd() {
+    if (state.playerGoesFirst) {
+        startNextThrow();
+    } else {
+        state.phase = 'aim';
+        hideOverlays(); updateUI(); render();
+        setTimeout(doCpuThrow, 600);
+    }
+}
+
+function restartGame() {
+    cancelAnimationFrame(state.animFrame);
+    state = makeState(Math.random() < 0.5);
+    document.getElementById('coin-msg').textContent = state.nextThrowMsg;
+    showOverlay('overlay-start');
+    updateUI(); render();
+}
+
+// ── Init ───────────────────────────────────────────────────────────────────
+
+state = makeState(Math.random() < 0.5);
+document.getElementById('coin-msg').textContent = state.nextThrowMsg;
+updateUI();
+render();
+</script>
+</body>
+</html>
