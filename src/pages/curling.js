@@ -640,14 +640,28 @@ export default function CurlingGame() {
     return (
         <div style={{
             minHeight: '100vh',
-            background: 'linear-gradient(135deg, #1a365d 0%, #2c5282 50%, #1a365d 100%)',
+            background: 'linear-gradient(135deg, #0f2419 0%, #163426 50%, #1d3f30 100%)',
+            backgroundAttachment: 'fixed',
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
             justifyContent: 'center',
             fontFamily: "'Segoe UI', system-ui, sans-serif",
             padding: '20px',
+            position: 'relative',
         }}>
+            <div style={{
+                position: 'fixed',
+                inset: 0,
+                background: `
+                    radial-gradient(circle at 20% 80%, rgba(120, 119, 198, 0.3) 0%, transparent 50%),
+                    radial-gradient(circle at 80% 20%, rgba(255, 255, 255, 0.1) 0%, transparent 50%),
+                    radial-gradient(circle at 40% 40%, rgba(120, 119, 198, 0.15) 0%, transparent 50%)
+                `,
+                pointerEvents: 'none',
+                zIndex: 0,
+            }} />
+            <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%' }}>
             <h1 style={{
                 color: '#fff', fontSize: '2rem', fontWeight: 800, letterSpacing: '2px',
                 marginBottom: '8px', textShadow: '0 2px 8px rgba(0,0,0,0.4)', textTransform: 'uppercase',
@@ -880,6 +894,7 @@ export default function CurlingGame() {
 
             <div style={{ marginTop: 8, color: 'rgba(255,255,255,0.4)', fontSize: '0.75rem' }}>
                 🔴 Red = You &nbsp;•&nbsp; 🟡 Yellow = CPU &nbsp;•&nbsp; {STONES_PER_SIDE} stones each &nbsp;•&nbsp; {TOTAL_ENDS} ends
+            </div>
             </div>
         </div>
     );
